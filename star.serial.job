@@ -1,0 +1,4 @@
+#!/bin/bash
+STARJOB=$(qsub -v "INPUT_FILE=$1" -N star star.job)
+echo $STARJOB	
+

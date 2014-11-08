@@ -1,0 +1,15 @@
+# HTSEQ to compute transcript usage
+#PBS -l walltime=6:00:00
+#PBS -l cput=2:00:00
+#PBS -l nodes=1:ppn=1
+#PBS -l mem=4gb
+#PBS -j oe
+
+module load homer
+module load samtools
+
+cd $PBS_O_WORKDIR
+
+makeTagDirectory homer.$PREFIX_FILE $PREFIX_FILE.bam
+annotatePeaks.pl ~/noncoding.bed hg19 -hist 50 -ghist -d homer.$PREFIX_FILE > $PREFIX_FILE.matrix
+exit

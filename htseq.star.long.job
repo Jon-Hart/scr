@@ -1,0 +1,45 @@
+# HTSEQ to compute transcript usage
+#PBS -l walltime=4:00:00
+#PBS -l cput=4:00:00
+#PBS -l nodes=1:ppn=1
+#PBS -l mem=4gb
+#PBS -j oe
+
+#use the local scratch drive
+cd $PBSTMPDIR
+rm -r *
+
+#sanity check
+if (! ( $?PREFIX_FILE)) then
+	echo "Input file must be defined"
+	exit
+else
+	if (! ( $?OUTPUT_DIR)) then
+		cat $PBS_O_WORKDIR/star.$PREFIX_FILE.tgz | pigz -dc | tar xv star.$PREFIX_FILE.sorted.bam.bam
+	else
+		cat $OUTPUT_DIR/star.$PREFIX_FILE.tgz | pigz -dc | tar xv star.$PREFIX_FILE.sorted.bam.bam
+	endif	
+endif
+
+cp ~/gencode.v19.long_noncoding_RNAs.gtf genes.gtf
+module load python
+module load samtools
+# count the read overlaps per gene
+samtools view -h star.$PREFIX_FILE.sorted.bam.bam | ~/.local/bin/htseq-count -m intersection-nonempty --stranded=reverse - genes.gtf >$PREFIX_FILE.linc.rev.txt
+samtools view -h star.$PREFIX_FILE.sorted.bam.bam | ~/.local/bin/htseq-count -m intersection-nonempty --stranded=yes - genes.gtf >$PREFIX_FILE.linc.txt
+module unload samtools
+module unload python
+rm genes.gtf
+
+cat $PREFIX_FILE.txt | pigz -9 >htseq.$PREFIX_FILE.txt.gz
+cat $PREFIX_FILE.rev.txt | pigz -9 > htseq.$PREFIX_FILE.rev.txt.gz
+
+if (! (  $?OUTPUT_DIR)) then
+        cp htseq.*.txt.gz $PBS_O_WORKDIR
+else
+        cp htseq.*.txt.gz $OUTPUT_DIR
+endif
+
+rm -r *
+
+exit

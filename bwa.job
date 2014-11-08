@@ -1,0 +1,94 @@
+# bwa alignment to reference genome
+#PBS -l walltime=15:00:00
+#PBS -l cput=240:00:00
+#PBS -l nodes=1:ppn=8
+#PBS -l mem=20gb
+#PBS -j oe
+
+# Adjust the cput as appropriate.  The main part of this job is the bwa
+# alignment.  In my experience it takes about 75,000s per 17 million reads a
+# bit over 1 hour per million.  You can get the job to schedule faster by
+# setting this to a smaller value.  walltime should be set to cput/6 or so to
+# be on the safe side.
+
+# requires 4gb of ram for the reference plus 500mb of ram for each additional
+# thread 8gb total but in my experience this is incorrect.  For 20million 100bp
+# reads on 8 cores I had a peak usage of 19gb latest version now wants 3.2gb
+# per thread so 19gb might need to go up to 26gb need to have $INPUT_FILE for
+# the input fastq and $PREFIX_FILE for the output files defined
+
+# exomes are too big to align on the scratch so align in the local directory
+cd $PBS_O_WORKDIR
+
+#clean up variables
+if ( $INPUT_FILE =~ "" ) then
+	unsetenv INPUT_FILE
+endif
+if ( $PREFIX_FILE =~ "" ) then
+	unsetenv PREFIX_FILE
+endif
+if ( $OUTPUT_DIR =~ "" ) then
+	unsetenv OUTPUT_DIR
+endif
+if ( $GENOME_FILE =~ "" ) then
+	unsetenv GENOME_FILE
+endif
+
+#sanity check
+if (! $?INPUT_FILE) then
+	echo "Input file must be defined"
+	exit
+endif
+# construct read group
+
+# extract the input file if needed
+set filename=`basename "$INPUT_FILE"`
+if ($filename:e == "gz") then
+	/usr/bin/time -v unpigz $filename
+	set filename=$filename:r
+endif
+if ($filename:e == "sra") then
+	if ( -e ${PREFIX_FILE:r}_1.fastq) then
+		if ( ! -e $PREFIX_FILE.bam) then
+			# load bwa and samtools
+			module load bwa
+			module load samtools
+			bwa mem -t 8 -M  \
+	        	/gpfs/group/databases/Homo_sapiens/UCSC/hg19/Sequence/BWAIndex/version0.6.0/genome.fa \
+	        	${PREFIX_FILE:r}_1.fastq ${PREFIX_FILE:r}_2.fastq \
+			| samtools view -bSh - \
+			| samtools sort - $PREFIX_FILE
+		endif
+	endif
+else
+	
+	# load bwa and samtools
+	module load bwa
+	module load samtools
+	if (! -e $PREFIX_FILE.sai) then
+		/usr/bin/time -v bwa aln -t 8 \
+			/gpfs/group/databases/Homo_sapiens/UCSC/hg19/Sequence/BWAIndex/version0.6.0/genome.fa \
+			$INPUT_FILE >$PREFIX_FILE.sai
+	endif
+	# bwa samse use the sai to print out a valid sam file(with read group headers)
+	# Usage: bwa samse [-n max_occ] [-f out.sam] [-r RG_line] <prefix> <in.sai> <in.fq>
+	# pipe this into samtools view -bSH which will convert the sam to bam in realtime
+	# pipe this into samtools sort which will give us an appropriate coordinate sorted bam alignment file
+
+	if (! -e $PREFIX_FILE.bam) then
+		bwa samse \
+		-r "@RG\tID:"$PREFIX_FILE"\tLB:"$PREFIX_FILE"\tSM:"$PREFIX_FILE"\tPL:ILLUMINA" \
+		/gpfs/group/databases/Homo_sapiens/UCSC/hg19/Sequence/BWAIndex/version0.6.0/genome.fa \
+		$PREFIX_FILE.sai $INPUT_FILE \
+		| samtools view -bSh - \
+		| samtools sort - $PREFIX_FILE
+	endif
+	
+	
+endif
+
+# unload the modules
+module unload samtools
+module unload bwa
+
+exit

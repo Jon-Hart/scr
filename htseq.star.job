@@ -1,0 +1,86 @@
+# HTSEQ to compute transcript usage
+#PBS -l walltime=6:00:00
+#PBS -l cput=2:00:00
+#PBS -l nodes=1:ppn=1
+#PBS -l mem=4gb
+#PBS -j oe
+
+#use the local scratch drive
+cd $PBSTMPDIR
+rm -r *
+
+if (! ( $?OUTPUT_DIR)) then
+        set OUTPUT_DIR = $PBS_O_WORKDIR
+endif
+
+
+#sanity check
+if (! ( $?PREFIX_FILE)) then
+	echo "Input file must be defined"
+	exit
+else
+	cat $OUTPUT_DIR/star.$PREFIX_FILE.tgz | pigz -dc | tar xv star.$PREFIX_FILE.sorted.bam.bam
+endif
+
+if (! ( $?GTF)) then
+	cp /gpfs/group/vogt/shared/Homo_sapiens/UCSC/hg19/Annotation/Genes/genes.gtf .
+	set EXT = encode
+else
+	cp $GTF genes.gtf
+	set EXT = `basename $GTF`
+endif
+
+module load python
+module load samtools
+# count the read overlaps per gene
+if (! -e $OUTPUT_DIR/htseq.star.${PREFIX_FILE}.${EXT}.rev.txt.gz) then
+	if (! ( $?ID)) then
+		samtools view -h star.$PREFIX_FILE.sorted.bam.bam | \
+		~/.local/bin/htseq-count -m intersection-nonempty --stranded=reverse - genes.gtf \
+		>$PREFIX_FILE.rev.txt
+		cat $PREFIX_FILE.rev.txt | pigz -9 > $OUTPUT_DIR/htseq.star.$PREFIX_FILE.$EXT.rev.txt.gz
+	else
+		if (! ( $?TYPE)) then
+			samtools view -h star.$PREFIX_FILE.sorted.bam.bam | \
+	                ~/.local/bin/htseq-count -m intersection-nonempty --stranded=reverse - genes.gtf \
+				-i $ID \
+	                >$PREFIX_FILE.rev.txt
+	                cat $PREFIX_FILE.rev.txt | pigz -9 > $OUTPUT_DIR/htseq.star.$PREFIX_FILE.$EXT.rev.txt.gz
+		else
+			samtools view -h star.$PREFIX_FILE.sorted.bam.bam | \
+                        ~/.local/bin/htseq-count -m intersection-nonempty --stranded=reverse - genes.gtf \
+                                -i $ID -t $TYPE \
+                        >$PREFIX_FILE.rev.txt
+                        cat $PREFIX_FILE.rev.txt | pigz -9 > $OUTPUT_DIR/htseq.star.$PREFIX_FILE.$EXT.rev.txt.gz
+		endif
+	endif
+endif
+if (! -e $OUTPUT_DIR/htseq.star.${PREFIX_FILE}.${EXT}.txt.gz) then
+        if (! ( $?ID)) then
+                samtools view -h star.$PREFIX_FILE.sorted.bam.bam | \
+                ~/.local/bin/htseq-count -m intersection-nonempty --stranded=yes - genes.gtf \
+                >$PREFIX_FILE.txt
+                cat $PREFIX_FILE.txt | pigz -9 > $OUTPUT_DIR/htseq.star.$PREFIX_FILE.$EXT.txt.gz
+        else
+                if (! ( $?TYPE)) then
+                        samtools view -h star.$PREFIX_FILE.sorted.bam.bam | \
+                        ~/.local/bin/htseq-count -m intersection-nonempty --stranded=yes - genes.gtf \
+                                -i $ID \
+                        >$PREFIX_FILE.txt
+                        cat $PREFIX_FILE.txt | pigz -9 > $OUTPUT_DIR/htseq.star.$PREFIX_FILE.$EXT.txt.gz
+                else
+                        samtools view -h star.$PREFIX_FILE.sorted.bam.bam | \
+                        ~/.local/bin/htseq-count -m intersection-nonempty --stranded=yes - genes.gtf \
+                                -i $ID -t $TYPE \
+                        >$PREFIX_FILE.txt
+                        cat $PREFIX_FILE.txt | pigz -9 > $OUTPUT_DIR/htseq.star.$PREFIX_FILE.$EXT.txt.gz
+                endif
+        endif
+endif
+
+module unload samtools
+module unload python
+
+rm -r *
+
+exit

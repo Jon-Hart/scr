@@ -1,0 +1,97 @@
+# bwa alignment to reference genome
+#PBS -l walltime=20:00:00
+#PBS -l cput=160:00:00
+#PBS -l nodes=1:ppn=8
+#PBS -l mem=44gb
+#PBS -j oe
+
+# tophat is the bulk of this job.  It took ~10 hours of cputime to process 17
+# million reads or about 0.6 hours per million.  However the run I was doing it
+# peaked at about 5-6 cores of cpu usage over this time.  It didn't appear that
+# there was any problem with the node, so probably tophat alternates between
+# multithreaded and single threaded algorithms in spots.  Adjust the cput and
+# wall time as appropriate to speed up queue times.
+
+# requires 4gb of ram for the reference plus 500mb of ram for each additional thread 8gb total
+# but in my experience this is incorrect.  For 17 million 100bp reads on 8
+# cores I had a peak usage of 19gb For 200 million reads one source suggests
+# about 40gb.  Only one step will fail if tophat runs out of memory.  It is
+# possible to restart tophat, so if this does happen, you can make a new job
+# with increased memory and use the tophat recover switch using the temporary
+# files which will be present in the archive produced from this job.
+
+
+# setup environment variables
+set BOWTIE_INDEXES = $PBSTMPDIR
+module load tophat/2.0.12
+module load bowtie/2.2.3
+module load cufflinks/2.2.1
+
+#use the local scratch drive
+cd $PBSTMPDIR
+rm -r *
+
+# need to have $INPUT_FILE for the input fastq and $PREFIX_FILE for the output files defined
+#sanity check
+if (! ( $?INPUT_FILE)) then
+	echo "Input file must be defined"
+	exit
+endif
+
+# copy and extract the input file if needed
+module load samtools
+module load fastx
+echo "copied file"
+set filename=`basename "$INPUT_FILE"`
+if ($filename:e == "gz") then
+	zcat $INPUT_FILE | fastq_quality_trimmer -Q33 -t 18 -l 20 > $PREFIX_FILE.fil.fq
+endif
+if ($filename:e == "fastq") then
+	cat $INPUT_FILE | fastq_quality_trimmer -Q33 -t 18 -l 20 > $PREFIX_FILE.fil.fq
+endif
+if (! (  $?PREFIX_FILE)) then
+	echo "Output prefix not defined.  Defaulting to input file for prefix."
+	set PREFIX_FILE=$filename
+	zcat $INPUT_FILE | fastq_quality_trimmer -Q33 -t 18 -l 20 > $PREFIX_FILE.fil.fq
+endif
+
+# setup the following steps
+
+# fastqc
+module load fastqc
+/usr/bin/time -v fastqc -t 8 $PREFIX_FILE.fil.fq
+if (! (  $?OUTPUT_DIR)) then
+        tar cfv - --exclude '*.tgz' $PREFIX_FILE.fil.fq_fastqc | pigz -9 -p 8 >$PBS_O_WORKDIR/tophat.fastqc.$PREFIX_FILE.tgz
+else
+        tar cfv - --exclude '*.tgz' $PREFIX_FILE.fil.fq_fastqc | pigz -9 -p 8 >$OUTPUT_DIR/tophat.fastqc.$PREFIX_FILE.tgz
+endif
+
+
+module unload fastqc
+
+# tophat for alignments
+/usr/bin/time -v tophat --library-type fr-firststrand \
+	-G /gpfs/group/vogt/shared/Homo_sapiens/UCSC/hg19/Annotation/Genes/genes.gtf -o tophat_$PREFIX_FILE --num-threads=8 \
+	/gpfs/group/databases/Homo_sapiens/UCSC/hg19/Sequence/Bowtie2Index/genome $PREFIX_FILE.fil.fq
+
+if (! (  $?OUTPUT_DIR)) then
+        tar cfv - --exclude '*.tgz' tophat_$PREFIX_FILE | pigz -9 -p 8 >$PBS_O_WORKDIR/tophat.$PREFIX_FILE.tgz
+else
+        tar cfv - --exclude '*.tgz' tophat_$PREFIX_FILE | pigz -9 -p 8 >$OUTPUT_DIR/tophat.$PREFIX_FILE.tgz
+endif
+rm -r tophat_$PREFIX_FILE
+
+
+/usr/bin/time -v tophat --library-type fr-secondstrand \
+       	-G /gpfs/group/vogt/shared/Homo_sapiens/UCSC/hg19/Annotation/Genes/genes.gtf -o tophat.rev_$PREFIX_FILE --num-threads=8 \
+	/gpfs/group/databases/Homo_sapiens/UCSC/hg19/Sequence/Bowtie2Index/genome $PREFIX_FILE.fil.fq
+
+if (! (  $?OUTPUT_DIR)) then
+        tar cfv - --exclude '*.tgz' tophat.rev_$PREFIX_FILE | pigz -9 -p 8 >$PBS_O_WORKDIR/tophat.rev.$PREFIX_FILE.tgz
+else
+        tar cfv - --exclude '*.tgz' tophat.rev_$PREFIX_FILE | pigz -9 -p 8 >$OUTPUT_DIR/tophat.rev.$PREFIX_FILE.tgz
+endif
+rm -r tophat.rev_$PREFIX_FILE
+
+
+exit

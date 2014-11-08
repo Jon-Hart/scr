@@ -1,0 +1,52 @@
+# bwa alignment to reference genome
+#PBS -l walltime=2:00:00
+#PBS -l cput=2:00:00
+#PBS -l nodes=1:ppn=1
+#PBS -l mem=4gb
+#PBS -j oe
+
+# Adjust the cput as appropriate.  The main part of this job is the bwa
+# alignment.  In my experience it takes about 75,000s per 17 million reads a
+# bit over 1 hour per million.  You can get the job to schedule faster by
+# setting this to a smaller value.  walltime should be set to cput/6 or so to
+# be on the safe side.
+
+# requires 4gb of ram for the reference plus 500mb of ram for each additional
+# thread 8gb total but in my experience this is incorrect.  For 20million 100bp
+# reads on 8 cores I had a peak usage of 19gb latest version now wants 3.2gb
+# per thread so 19gb might need to go up to 26gb need to have $INPUT_FILE for
+# the input fastq and $PREFIX_FILE for the output files defined
+
+# exomes are too big to align on the scratch so align in the local directory
+cd $PBS_O_WORKDIR
+
+#clean up variables
+if ( $INPUT_FILE =~ "" ) then
+	unsetenv INPUT_FILE
+endif
+
+#sanity check
+if (! $?INPUT_FILE) then
+	echo "Input file must be defined"
+	exit
+endif
+
+if (! -e ${INPUT_FILE}_1.fastq) then
+	# load bwa and samtools
+        module load python
+	module load sra
+	fastq-dump $PWD/$INPUT_FILE.sra
+	if ( -e ${INPUT_FILE}_3.fastq ) then
+		python ../fastqCombinePairedEnd.py ${INPUT_FILE:r}_1.fastq ${INPUT_FILE:r}_3.fastq "_"
+		mv ${INPUT_FILE:r}_1.fastq_pairs_R1.fastq ${INPUT_FILE:r}_1.fastq
+		mv ${INPUT_FILE:r}_3.fastq_pairs_R2.fastq ${INPUT_FILE:r}_2.fastq
+		rm ${INPUT_FILE:r}_3.fastq
+		rm ${INPUT_FILE:r}_1.fastq_singles.fastq
+	else
+		python ../fastqCombinePairedEnd.py ${INPUT_FILE:r}_1.fastq ${INPUT_FILE:r}_2.fastq "_"
+                mv ${INPUT_FILE:r}_1.fastq_pairs_R1.fastq ${INPUT_FILE:r}_1.fastq
+                mv ${INPUT_FILE:r}_2.fastq_pairs_R2.fastq ${INPUT_FILE:r}_2.fastq
+                rm ${INPUT_FILE:r}_1.fastq_singles.fastq
+	endif
+endif
+exit

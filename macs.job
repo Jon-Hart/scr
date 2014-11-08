@@ -1,0 +1,16 @@
+# HTSEQ to compute transcript usage
+#PBS -l walltime=6:00:00
+#PBS -l cput=2:00:00
+#PBS -l nodes=1:ppn=1
+#PBS -l mem=4gb
+#PBS -j oe
+
+module load macs
+module load samtools
+
+cd $PBS_O_WORKDIR
+
+setenv PATH "/gpfs/home/jhart/PeakSplitter_Cpp/PeakSplitter_Linux64:$PATH"
+macs -t $PREFIX_FILE.bam -c $CONTROL_FILE.bam -n $PREFIX_FILE -g hs -w -S --call-subpeaks
+
+exit

@@ -1,0 +1,45 @@
+# HTSEQ to compute transcript usage
+#PBS -l walltime=8:00:00
+#PBS -l cput=8:00:00
+#PBS -l nodes=1:ppn=1
+#PBS -l mem=4gb
+#PBS -j oe
+
+#use the local scratch drive
+cd $PBSTMPDIR
+rm -r *
+
+#sanity check
+cp ~/gencode.v19.long_noncoding_RNAs.gtf genes.gtf
+module load python
+module load samtools
+# count the read overlaps per gene
+if (! ( $?PREFIX_FILE)) then
+	echo "Input file must be defined"
+	exit
+else
+	if (! ( $?OUTPUT_DIR)) then
+		cat $PBS_O_WORKDIR/tophat.$PREFIX_FILE.tgz | pigz -dc | tar xv --wildcards "tophat_$PREFIX_FILE/accepted_hits.bam"
+	else
+		cat $OUTPUT_DIR/tophat.$PREFIX_FILE.tgz | pigz -dc | tar xv --wildcards "tophat_$PREFIX_FILE/accepted_hits.bam"
+
+	endif	
+endif
+
+samtools view tophat_$PREFIX_FILE/accepted_hits.bam | ~/.local/bin/htseq-count -m intersection-nonempty --stranded=reverse -t gene -i gene_name - genes.gtf >htseq.${PREFIX_FILE}_for_rev.linc.txt
+samtools view tophat_$PREFIX_FILE/accepted_hits.bam | ~/.local/bin/htseq-count -m intersection-nonempty --stranded=yes -t gene -i gene_name - genes.gtf >${PREFIX_FILE}_for_for.linc.txt
+
+module unload samtools
+module unload python
+rm genes.gtf
+
+
+if (! (  $?OUTPUT_DIR)) then
+	tar cfv - *.txt | gzip -9 > $PBS_O_WORKDIR/htseq.linc.$PREFIX_FILE.tgz
+else
+	tar cfv - *.txt | gzip -9 > $OUTPUT_DIR/htseq.linc.$PREFIX_FILE.tgz
+endif
+
+rm -r *
+
+exit
